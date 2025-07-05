@@ -27,7 +27,8 @@ The video ingestion feature will:
 - Validate the input video file (e.g., existence, format).
 - Extract the audio track from the video.
 - Transcribe the audio using the Gemini API.
-- Process the transcription to identify key topics and segment the video into logical slices.
+    - Process the transcription to identify key topics and segment the video into logical slices, storing these as timestamps for deeplinking rather than creating new video clips.
+    - Identify and flag newly discovered topics for user review and approval.
 - Store video metadata (original path, unique ID, start/end timestamps of slices, topics, keywords) in a local database.
 - Provide progress updates and error handling during the ingestion process.
 
