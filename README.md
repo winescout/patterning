@@ -29,12 +29,13 @@ Before running the spike, ensure you have the following software installed and c
         ```
         You should see version information. If not, ensure `ffmpeg` is in your system's PATH.
 
-3.  **Video-Llama Model**:
-    *   The Video-Llama model is used for transcribing video content. This model is typically large and may require significant computational resources (e.g., a GPU).
-    *   **Installation and Setup:** You **must** follow the detailed installation and setup instructions provided in the official Video-Llama GitHub repository: [https://github.com/DAMO-NLP-SG/Video-LLaMA](https://github.com/DAMO-NLP-SG/Video-LLaMA)
-        *   This usually involves cloning the repository, installing its specific dependencies, and downloading pre-trained model weights.
-        *   Pay close attention to any instructions regarding GPU setup if you have one.
-    *   **Configuration:** If the Video-Llama setup requires specifying a model path, you might need to set an environment variable (e.g., `VIDEO_LLAMA_MODEL_PATH`) in a `.env` file in the project root. An example `.env.example` will be provided.
+3.  **Whisper Model**:
+    *   The Whisper model is used for transcribing audio content. It can be run on CPU, but GPU is recommended for faster transcription.
+    *   **Installation:**
+        ```bash
+        uv pip install openai-whisper
+        ```
+    *   **Model Download:** The first time you run the spike, Whisper will automatically download the 'base' model. This may take some time depending on your internet connection.
 
 4.  **spaCy Model**:
     *   `spaCy` is used for natural language processing, specifically for sentence boundary detection and basic keyword extraction in this spike.

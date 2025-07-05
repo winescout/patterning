@@ -13,20 +13,20 @@ This PRP outlines a focused spike to perform an end-to-end validation of the cor
 ---
 
 ## Goal
-To successfully extract audio from an MP4 video file, transcribe it using a *real* Video-Llama model (not simulated), extract topics from the transcription, and output the full transcript along with a list of topics and their corresponding timestamps to a markdown file. This will validate the entire core ingestion pipeline and confirm the user's system is capable of running these processes.
+To successfully extract audio from an MP4 video file, transcribe it using a *real* Whisper model, extract topics from the transcription, and output the full transcript along with a list of topics and their corresponding timestamps to a markdown file. This will validate the entire core ingestion pipeline and confirm the user's system is capable of running these processes.
 
 ## Why
 - To confirm that `ffmpeg` is correctly installed and efficiently extracts audio.
-- To verify that the Video-Llama model can be successfully loaded, configured, and used for actual transcription on the user's system, assessing its performance and resource consumption.
+- To verify that the Whisper model can be successfully loaded, configured, and used for actual transcription on the user's system, assessing its performance and resource consumption.
 - To validate the basic functionality of topic extraction from a real transcript.
 - To ensure the user has all necessary software and configurations in place for full feature development.
-- To understand the quality and format of the transcription and topic extraction output from Video-Llama.
+- To understand the quality and format of the transcription and topic extraction output from Whisper.
 
 ## What
 This spike will implement a functional subset of the video ingestion pipeline:
 - Accepting a local file path to an MP4 video as input.
 - Extracting the audio track from the video using `ffmpeg`.
-- Loading and using the Video-Llama model to transcribe the extracted audio.
+- Loading and using the Whisper model to transcribe the extracted audio.
 - Processing the transcription to identify key topics and their timestamps.
 - Generating a markdown file containing the full transcript and a structured list of identified topics with their start and end timestamps.
 - Providing clear feedback on the success or failure of each step, especially regarding external tool/model setup and execution.
@@ -34,7 +34,7 @@ This spike will implement a functional subset of the video ingestion pipeline:
 ### Success Criteria
 - [ ] User can run a CLI command to initiate the spike.
 - [ ] `ffmpeg` successfully extracts audio from a provided MP4 video.
-- [ ] The Video-Llama model is successfully loaded and performs actual transcription.
+- [ ] The Whisper model is successfully loaded and performs actual transcription.
 - [ ] Topics and their timestamps are successfully extracted from the transcription.
 - [ ] A markdown file is generated with the video's transcript and a structured list of topics/timestamps.
 - [ ] Clear error messages are provided if `ffmpeg` or Video-Llama operations fail.
@@ -45,11 +45,11 @@ This spike will implement a functional subset of the video ingestion pipeline:
 ### Documentation & References (list all context needed to implement the feature)
 ```yaml
 # MUST READ - Include these in your context window
-- url: https://github.com/DAMO-NLP-SG/Video-LLaMA
-  why: Official GitHub repository for Video-LLaMA. CRITICAL for installation, model download, and understanding its Python API for transcription.
+- url: https://github.com/openai/whisper
+  why: Official GitHub repository for OpenAI Whisper. CRITICAL for installation, model download, and understanding its Python API for transcription.
 
-- url: https://huggingface.co/DAMO-NLP-SG/Video-LLaMA
-  why: Hugging Face page for Video-LLaMA models and checkpoints. Provides direct links to model weights.
+- url: https://github.com/openai/whisper#available-models-and-languages
+  why: Whisper documentation on available models and their sizes.
 
 - url: https://ffmpeg.org/download.html
   why: Official download page for ffmpeg. Crucial for user installation instructions.
@@ -109,7 +109,7 @@ This spike will implement a functional subset of the video ingestion pipeline:
 │   ├── video_ingestion/
 │   │   ├── __init__.py
 │   │   ├── audio_extractor.py # Handles audio extraction using ffmpeg/pydub
-│   │   ├── transcriber.py  # Handles transcription using Video-Llama model
+│   │   ├── transcriber.py  # Handles transcription using Whisper model
 │   │   └── topic_extractor.py # Handles topic identification and timestamping
 │   └── cli/
 │       ├── __init__.py
@@ -127,8 +127,8 @@ This spike will implement a functional subset of the video ingestion pipeline:
 ### Known Gotchas of our codebase & Library Quirks
 ```python
 # CRITICAL: ffmpeg MUST be installed and accessible in the system's PATH. This is the primary point of failure for audio extraction.
-# CRITICAL: Video-Llama models are typically very large and require significant computational resources (e.g., GPU, large RAM). Users MUST ensure they have the necessary hardware and have downloaded the model weights.
-# CRITICAL: The exact method for loading and using Video-Llama will depend on the specific version and its Python API. The user will need to follow the Video-Llama GitHub instructions carefully.
+# CRITICAL: Whisper models are typically very large and require significant computational resources (e.g., GPU, large RAM). Users MUST ensure they have the necessary hardware and have downloaded the model weights.
+# CRITICAL: The exact method for loading and using Whisper will depend on the specific version and its Python API. The user will need to follow the Whisper GitHub instructions carefully.
 # CRITICAL: Model setup (downloading weights, configuring paths) can be time-consuming and complex. Provide clear, step-by-step instructions in the README.
 # CRITICAL: Handling various video codecs and formats can be complex; ensure robust error handling for unsupported formats.
 # CRITICAL: Large video files will result in long transcription times and high resource usage.
@@ -158,11 +158,11 @@ CREATE src/video_ingestion/audio_extractor.py:
   - Function to extract audio from MP4 using `ffmpeg` and `pydub`.
   - Handle temporary audio file storage.
 
-Task 3: Implement Video-Llama Transcriber
+Task 3: Implement Whisper Transcriber
 CREATE src/video_ingestion/transcriber.py:
-  - Implement `load_video_llama_model()` to load the actual Video-Llama model (user will need to install it).
-  - Implement `transcribe_audio()` to perform actual transcription using the loaded Video-Llama model.
-  - This task will require the user to follow Video-Llama installation instructions.
+  - Implement `load_whisper_model()` to load the actual Whisper model (user will need to install it).
+  - Implement `transcribe_audio()` to perform actual transcription using the loaded Whisper model.
+  - This task will require the user to follow Whisper installation instructions.
 
 Task 4: Implement Topic Extraction and Timestamping
 CREATE src/video_ingestion/topic_extractor.py:
@@ -178,8 +178,7 @@ MODIFY src/cli/commands.py:
 
 Task 6: Environment Variable and Setup Instructions
 CREATE .env.example:
-  - Add placeholder for `VIDEO_LLAMA_MODEL_PATH` (or similar, if needed for model loading).
-  - Add clear, detailed instructions for `ffmpeg` installation and Video-Llama model download/setup.
+  - Add clear, detailed instructions for `ffmpeg` installation and Whisper model download/setup.
 ```
 
 ### Per task pseudocode as needed added to each task
@@ -213,69 +212,41 @@ def extract_audio(video_path: str, output_audio_path: str) -> None:
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg audio extraction failed: {e.stderr.decode()}")
 
-# Task 3: Implement Video-Llama Transcriber
+# Task 3: Implement Whisper Transcriber
 # src/video_ingestion/transcriber.py
 import os
-# from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq # Example for a Hugging Face model
-# import torch
-# from video_llama.common.registry import registry # Example for Video-Llama's own registry
-# from video_llama.models.video_llama import VideoLLaMA # Example for Video-Llama model class
-# from video_llama.processors.blip_processors import Blip2ImageProcessor # Example for processor
+import torch
+import whisper
 
-# Global variables for model and processor
-_video_llama_model = None
-_video_llama_processor = None
+# Global variables for model
+_whisper_model = None
 
-def load_video_llama_model():
+def load_whisper_model():
     """
-    Loads the Video-Llama model and processor.
-    User MUST install Video-Llama and its dependencies, and download model weights.
-    Refer to https://github.com/DAMO-NLP-SG/Video-LLaMA for detailed instructions.
+    Loads the Whisper model.
+    User MUST install openai-whisper.
     """
-    global _video_llama_model, _video_llama_processor
-    if _video_llama_model is None:
-        print("Loading Video-Llama model. This may take some time and require significant resources (e.g., GPU).")
+    global _whisper_model
+    if _whisper_model is None:
+        print("Loading Whisper model (base). This may take some time.")
         try:
-            # CRITICAL: Replace with actual Video-Llama model loading logic.
-            # This is highly dependent on the specific Video-Llama version and how it's packaged.
-            # Example (conceptual, based on common LLM loading patterns):
-            # from video_llama.models import load_model
-            # _video_llama_model = load_model(
-            #     name="video_llama",
-            #     model_type="llama_v2", # Or other model type
-            #     is_eval=True,
-            #     device="cuda" if torch.cuda.is_available() else "cpu",
-            # )
-            # _video_llama_processor = Blip2ImageProcessor(mean=..., std=...) # Or other processor
-            # _video_llama_model.eval()
-
-            # For this spike, we'll use a simplified placeholder that assumes a successful load
-            # if the user has set up their environment correctly.
-            # In a real scenario, this would involve actual library calls.
-            _video_llama_model = True # Simulate successful load
-            _video_llama_processor = True # Simulate successful load
-            print("Video-Llama model loaded successfully (assuming user setup is complete).")
+            _whisper_model = whisper.load_model("base")
+            print("Whisper model loaded successfully.")
         except Exception as e:
-            raise RuntimeError(f"Failed to load Video-Llama model. Ensure it's installed and configured correctly: {e}")
-    return _video_llama_model, _video_llama_processor
+            raise RuntimeError(f"Failed to load Whisper model. Ensure it's installed and configured correctly: {e}")
+    return _whisper_model
 
 def transcribe_audio(audio_path: str) -> str:
     """
-    Transcribes an audio file using the Video-Llama model.
+    Transcribes an audio file using the Whisper model.
     """
-    model, processor = load_video_llama_model()
-    print(f"Transcribing audio from {audio_path} using Video-Llama...")
+    model = load_whisper_model()
+    print(f"Transcribing audio from {audio_path} using Whisper...")
     try:
-        # CRITICAL: Replace with actual Video-Llama transcription inference.
-        # This might involve:
-        # 1. Loading audio into a format Video-Llama expects (e.g., numpy array, tensor).
-        # 2. Passing it through the processor.
-        # 3. Running model inference.
-        # 4. Decoding the output.
-        # For this spike, we'll return a more realistic placeholder.
-        return f"This is a transcription of the audio from {os.path.basename(audio_path)} generated by Video-Llama. It covers topics like market analysis, trading strategies, and risk management."
+        result = model.transcribe(audio_path)
+        return result["text"]
     except Exception as e:
-        raise RuntimeError(f"Video-Llama transcription failed: {e}")
+        raise RuntimeError(f"Whisper transcription failed: {e}")
 
 # Task 4: Implement Topic Extraction and Timestamping
 # src/video_ingestion/topic_extractor.py
@@ -423,9 +394,8 @@ CLI:
 
 CONFIG:
   - add to: .env.example
-  - pattern: "# VIDEO_LLAMA_MODEL_PATH=/path/to/your/video_llama_model (if Video-Llama requires a path)"
   - pattern: "# Instructions for ffmpeg installation: https://ffmpeg.org/download.html"
-  - pattern: "# Instructions for Video-Llama setup: Refer to https://github.com/DAMO-NLP-SG/Video-LLaMA"
+  - pattern: "# Instructions for Whisper setup: Refer to https://github.com/openai/whisper"
   - pattern: "# Instructions for spaCy model download: python -m spacy download en_core_web_sm"
 ```
 
@@ -547,7 +517,7 @@ uv run pytest tests/test_video_ingestion/ -v
 ```bash
 # Manual test:
 # 1. Ensure you have a small MP4 video file (e.g., 10-30 seconds) for testing.
-# 2. IMPORTANT: Follow the Video-Llama installation instructions from its GitHub repository (linked in Documentation & References). This includes installing dependencies and downloading model weights.
+# 2. IMPORTANT: Install `openai-whisper` and ensure `torch` is installed. The Whisper model will download automatically on first use.
 # 3. Ensure `ffmpeg` is installed and in your system's PATH.
 # 4. Ensure spaCy model 'en_core_web_sm' is downloaded: `python -m spacy download en_core_web_sm`
 # 5. Run the spike command:
@@ -555,19 +525,19 @@ uv run pytest tests/test_video_ingestion/ -v
 
 # Expected Output:
 # - Console messages indicating audio extraction progress.
-# - Console messages indicating Video-Llama model loading and transcription progress.
+# - Console messages indicating Whisper model loading and transcription progress.
 # - A new markdown file (e.g., `spike_output_xxxx.md`) will be created in your current working directory.
 
 # Expected Content of Markdown File:
 # - A clear title with the video filename.
-# - The full transcript generated by Video-Llama.
+# - The full transcript generated by Whisper.
 # - A structured list of identified topics, each with estimated start and end timestamps, and the corresponding text segment.
 
 # Expected Failures (and their messages):
 # - If ffmpeg is not installed: "Spike failed: ffmpeg not found. Please install ffmpeg and ensure it's in your system's PATH."
 # - If video path is invalid: "Error: Video file not found at /path/to/your/test_video.mp4"
-# - If Video-Llama model loading fails (e.g., missing weights, incorrect path, insufficient GPU): "Spike failed: Failed to load Video-Llama model. Ensure it's installed and configured correctly: ..."
-# - If Video-Llama transcription fails: "Spike failed: Video-Llama transcription failed: ..."
+# - If Whisper model loading fails (e.g., missing weights, incorrect path, insufficient GPU): "Spike failed: Failed to load Whisper model. Ensure it's installed and configured correctly: ..."
+# - If Whisper transcription fails: "Spike failed: Whisper transcription failed: ..."
 ```
 
 ## Final validation Checklist
@@ -578,13 +548,13 @@ uv run pytest tests/test_video_ingestion/ -v
 - [ ] Error cases (ffmpeg not found, invalid video path, Video-Llama issues) are handled gracefully and provide clear messages.
 - [ ] Logs are informative but not verbose.
 - [ ] `ffmpeg` is confirmed to be installed and working.
-- [ ] Video-Llama model is confirmed to be loadable and performs actual transcription.
+- [ ] Whisper model is confirmed to be loadable and performs actual transcription.
 - [ ] The generated markdown file contains the full transcript and correctly formatted topics with timestamps.
 
 ---
 
 ## Anti-Patterns to Avoid
-- ❌ Don't skip `ffmpeg` or Video-Llama installation; this spike *requires* them to be functional.
+- ❌ Don't skip `ffmpeg` or Whisper installation; this spike *requires* them to be functional.
 - ❌ Don't hardcode paths; use `os.path.join` and temporary directories for intermediate files.
-- ❌ Don't ignore Video-Llama model resource requirements (e.g., GPU, memory); clearly communicate these to the user.
+- ❌ Don't ignore Whisper model resource requirements (e.g., GPU, memory); clearly communicate these to the user.
 - ❌ Don't expect perfect topic extraction or timestamping in this spike; the goal is basic functionality validation.
