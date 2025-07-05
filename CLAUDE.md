@@ -22,6 +22,11 @@ This project will proceed in two distinct phases:
 - **Use python_dotenv and load_env()** for environment variables.
 
 ### 🧪 Testing & Reliability
+- **Follow proper TDD (Test-Driven Development) practice**:
+  1. **Write tests first** before implementing any new functionality
+  2. **Run tests to see them fail** - this validates the test is testing the right thing
+  3. **Implement minimal code** to make tests pass
+  4. **Refactor** while keeping tests green
 - **Always create Pytest unit tests for new features** (functions, classes, routes, etc).
 - **After updating any logic**, check whether existing unit tests need to be updated. If so, do it.
 - **Tests should live in a `/tests` folder** mirroring the main app structure.
