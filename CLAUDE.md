@@ -5,6 +5,7 @@
 ### 🔄 Project Awareness & Context
 - **Use consistent naming conventions, file structure, and architecture patterns.**
 - **Use PRPs (Product Requirement Prompts)**: These are detailed and comprehensive feature requests that will serve as the primary mechanism for defining and guiding development tasks. They will contain all necessary context, constraints, and acceptance criteria for a given component or feature.
+- **When working on PRPs**, refer to `.ai_assistant/commands/generate-prp.md` for PRP creation guidelines and implementation guidance.
 
 ### 🚀 Project Phases
 This project will proceed in two distinct phases:
