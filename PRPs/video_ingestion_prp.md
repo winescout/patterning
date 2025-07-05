@@ -26,22 +26,27 @@ The video ingestion feature will:
 - Accept a local file path to an MP4 video as input.
 - Validate the input video file (e.g., existence, format).
 - Extract the audio track from the video.
+- Capture screenshots every 4 seconds using ffmpeg, saving them with timestamped filenames that include the original video name and timestamp (e.g., `video_name_004s.jpg`, `video_name_008s.jpg`).
 - Transcribe the audio using the Whisper model.
     - Process the transcription using spaCy NLP to identify specific trading/financial keywords (e.g., price action, support, resistance, technical analysis terms) and their exact timestamps, returning a dictionary mapping each keyword to all its timestamp occurrences.
     - Use lemmatization for enhanced matching (e.g., "trading" matches "trade", "levels" matches "level").
     - Store timestamps for deeplinking rather than creating new video clips.
     - Identify and flag newly discovered keywords for user review and approval.
 - Store video metadata (original path, unique ID, start/end timestamps of slices, topics, keywords) in a local database.
+- Organize outputs into structured directories (`output/reports/`, `output/screenshots/`) for better file management.
 - Provide progress updates and error handling during the ingestion process.
 
 ### Success Criteria
 - [ ] User can successfully ingest an MP4 video file via a CLI command.
 - [ ] Audio is accurately extracted from the video.
+- [ ] Screenshots are successfully captured every 4 seconds with timestamped filenames.
+- [ ] Screenshot filenames follow the pattern: `{video_name}_{timestamp}.jpg` (e.g., `test_video_004s.jpg`).
 - [ ] Transcription is successfully generated using the Whisper model.
 - [ ] Specific keywords and their timestamps are successfully extracted from the transcription using spaCy NLP.
 - [ ] Keywords are returned in dictionary format: `{keyword: [{"start": 1.2, "end": 1.5}, ...]}`.
 - [ ] Lemmatization correctly matches word variations (e.g., "trading" → "trade").
 - [ ] All relevant metadata for video slices is stored in the database.
+- [ ] Outputs are organized into structured directories (`output/reports/`, `output/screenshots/`).
 - [ ] The system handles common errors gracefully (e.g., invalid file path, model loading errors).
 - [ ] Progress is reported to the user during long-running operations.
 
@@ -111,6 +116,7 @@ The video ingestion feature will:
 │   │   ├── __init__.py
 │   │   ├── models.py       # Pydantic models for video/slice metadata
 │   │   ├── audio_extractor.py # Handles audio extraction using ffmpeg/pydub
+│   │   ├── image_extractor.py # Handles screenshot extraction using ffmpeg
 │   │   ├── transcriber.py  # Handles transcription using Whisper model
 │   │   ├── topic_extractor.py # Handles topic modeling and segmentation
 │   │   └── database.py     # Handles SQLite database operations for metadata
@@ -122,9 +128,13 @@ The video ingestion feature will:
 │   ├── test_video_ingestion/
 │   │   ├── __init__.py
 │   │   ├── test_audio_extractor.py
+│   │   ├── test_image_extractor.py
 │   │   ├── test_transcriber.py
 │   │   ├── test_topic_extractor.py
 │   │   └── test_database.py
+├── output/
+│   ├── screenshots/        # Directory for extracted screenshots
+│   └── reports/           # Directory for generated reports
 ├── .env.example            # Example for model paths and other environment variables
 ├── database/
 │   └── video_catalog.db    # SQLite database file (or similar)
@@ -200,33 +210,40 @@ CREATE src/video_ingestion/audio_extractor.py:
   - Function to extract audio from MP4 using `ffmpeg` and `pydub`.
   - Handle temporary audio file storage.
 
-Task 3: Implement Whisper Transcriber
+Task 3: Implement Image Extraction  
+CREATE src/video_ingestion/image_extractor.py:
+  - Function to capture screenshots every 4 seconds using `ffmpeg`.
+  - Generate timestamped filenames: `{video_name}_{timestamp}.jpg` (e.g., `test_video_004s.jpg`).
+  - Handle output directory creation and cleanup.
+
+Task 4: Implement Whisper Transcriber
 CREATE src/video_ingestion/transcriber.py:
   - Function to send video/audio to Whisper model for transcription.
   - Handle model loading and inference.
   - Implement retry logic for model inference if applicable.
   - Handle potential errors during model execution.
 
-Task 4: Implement Database Module
+Task 5: Implement Database Module
 CREATE src/video_ingestion/database.py:
   - Functions to initialize SQLite database (e.g., `video_catalog.db`).
   - Functions to store and retrieve `VideoMetadata` and `VideoSlice` objects.
   - Ensure proper indexing for efficient lookups.
 
-Task 5: Implement Keyword Extraction with spaCy
+Task 6: Implement Keyword Extraction with spaCy
 CREATE src/video_ingestion/topic_extractor.py:
   - Function to extract trading/financial keywords from Whisper transcription with word-level timestamps.
   - Use spaCy NLP for enhanced keyword matching including lemmatization.
   - Return dictionary format: `{keyword: [{"start": 1.2, "end": 1.5}, ...]}`.
   - Handle punctuation cleaning and avoid duplicate timestamps.
 
-Task 6: Orchestrate Ingestion Process
+Task 7: Orchestrate Ingestion Process
 MODIFY src/cli/commands.py:
-  - Integrate `audio_extractor`, `transcriber`, `topic_extractor`, and `database` modules within the `ingest` command.
+  - Integrate `audio_extractor`, `image_extractor`, `transcriber`, `topic_extractor`, and `database` modules within the `ingest` command.
   - Implement progress reporting and error handling.
   - Update `VideoMetadata` and `VideoSlice` in the database.
+  - Ensure outputs are organized into structured directories (`output/reports/`, `output/screenshots/`).
 
-Task 7: Environment Variable Setup
+Task 8: Environment Variable Setup
 CREATE .env.example:
   - Add clear, detailed instructions for `ffmpeg` installation and Whisper model download/setup.
   - Add spaCy model installation instructions: `python -m spacy download en_core_web_sm`.
@@ -261,7 +278,53 @@ def extract_audio(video_path: str, output_audio_path: str) -> None:
         # Reason: Provide clear error if ffmpeg fails
         raise RuntimeError(f"ffmpeg audio extraction failed: {e.stderr.decode()}")
 
-# Task 3: Implement Whisper Transcriber
+# Task 3: Implement Image Extraction
+# src/video_ingestion/image_extractor.py
+import subprocess
+import os
+from pathlib import Path
+from typing import List
+
+def extract_screenshots(video_path: str, output_dir: str, interval_seconds: int = 4) -> List[str]:
+    """
+    Extracts screenshots from an MP4 video file every N seconds using ffmpeg.
+    Returns list of generated screenshot filenames.
+    """
+    video_name = Path(video_path).stem  # Get filename without extension
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # ffmpeg command to extract frames every N seconds
+    # Format: video_name_004s.jpg, video_name_008s.jpg, etc.
+    output_pattern = os.path.join(output_dir, f"{video_name}_%03ds.jpg")
+    
+    command = [
+        "ffmpeg",
+        "-i", video_path,
+        "-vf", f"fps=1/{interval_seconds}",  # Extract 1 frame every N seconds
+        "-y",  # Overwrite output files
+        output_pattern
+    ]
+    
+    try:
+        print(f"Extracting screenshots from {video_path} every {interval_seconds} seconds...")
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        
+        # Find all generated screenshot files
+        screenshot_files = []
+        for i in range(0, 3600, interval_seconds):  # Support up to 1 hour of video
+            screenshot_path = os.path.join(output_dir, f"{video_name}_{i:03d}s.jpg")
+            if os.path.exists(screenshot_path):
+                screenshot_files.append(screenshot_path)
+        
+        print(f"Successfully extracted {len(screenshot_files)} screenshots")
+        return screenshot_files
+        
+    except FileNotFoundError:
+        raise RuntimeError("ffmpeg not found. Please install ffmpeg and ensure it's in your system's PATH.")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg screenshot extraction failed: {e.stderr}")
+
+# Task 4: Implement Whisper Transcriber
 # src/video_ingestion/transcriber.py
 import os
 import torch
@@ -297,7 +360,7 @@ def transcribe_audio(audio_path: str) -> str:
     except Exception as e:
         raise RuntimeError(f"Whisper transcription failed: {e}")
 
-# Task 4: Implement Database Module
+# Task 5: Implement Database Module
 # src/video_ingestion/database.py
 import sqlite3
 from typing import List, Dict
@@ -415,6 +478,44 @@ def test_extract_audio_invalid_path():
     """Test audio extraction with an invalid video path."""
     with pytest.raises(RuntimeError, match="ffmpeg audio extraction failed"):
         extract_audio("/non/existent/video.mp4", "output.wav")
+
+# CREATE tests/test_video_ingestion/test_image_extractor.py
+import pytest
+import os
+import subprocess
+from unittest.mock import patch
+from src.video_ingestion.image_extractor import extract_screenshots
+
+def test_extract_screenshots_success(tmp_path):
+    """Test successful screenshot extraction."""
+    dummy_video_path = tmp_path / "test_video.mp4"
+    # Create a dummy video file using ffmpeg
+    subprocess.run([
+        "ffmpeg", "-f", "lavfi", "-i", "color=black:size=320x240:duration=8",
+        "-c:v", "libx264", "-y", str(dummy_video_path)
+    ], check=True, capture_output=True)
+    
+    output_dir = tmp_path / "screenshots"
+    screenshot_files = extract_screenshots(str(dummy_video_path), str(output_dir), interval_seconds=4)
+    
+    assert len(screenshot_files) >= 1  # Should have at least one screenshot
+    for screenshot_file in screenshot_files:
+        assert os.path.exists(screenshot_file)
+        assert screenshot_file.endswith('.jpg')
+        assert 'test_video' in os.path.basename(screenshot_file)
+
+def test_extract_screenshots_invalid_video():
+    """Test screenshot extraction with invalid video file."""
+    with pytest.raises(RuntimeError, match="ffmpeg screenshot extraction failed"):
+        extract_screenshots("/nonexistent/video.mp4", "/tmp/screenshots")
+
+@patch('subprocess.run')
+def test_extract_screenshots_ffmpeg_not_found(mock_subprocess):
+    """Test screenshot extraction when ffmpeg is not available."""
+    mock_subprocess.side_effect = FileNotFoundError("ffmpeg not found")
+    
+    with pytest.raises(RuntimeError, match="ffmpeg not found"):
+        extract_screenshots("video.mp4", "output_dir")
 
 # CREATE tests/test_video_ingestion/test_transcriber.py
 import pytest
