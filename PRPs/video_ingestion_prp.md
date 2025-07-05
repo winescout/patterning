@@ -14,7 +14,7 @@ This PRP outlines the requirements for the video ingestion feature, allowing use
 ---
 
 ## Goal
-To develop a robust, user-driven video ingestion pipeline that takes local MP4 video files, extracts audio, transcribes it using the Gemini API, identifies topics, and stores relevant metadata in a catalog for future use. The process should be resilient to common video issues and provide clear feedback to the user.
+To develop a robust, user-driven video ingestion pipeline that takes local MP4 video files, extracts audio, transcribes it using the Whisper model, identifies topics, and stores relevant metadata in a catalog for future use. The process should be resilient to common video issues and provide clear feedback to the user.
 
 ## Why
 - This feature is critical for the product, as users must be able to process their own purchased video content.
@@ -26,7 +26,7 @@ The video ingestion feature will:
 - Accept a local file path to an MP4 video as input.
 - Validate the input video file (e.g., existence, format).
 - Extract the audio track from the video.
-- Transcribe the audio using the Video-Llama model.
+- Transcribe the audio using the Whisper model.
     - Process the transcription to identify key topics and segment the video into logical slices, storing these as timestamps for deeplinking rather than creating new video clips.
     - Identify and flag newly discovered topics for user review and approval.
 - Store video metadata (original path, unique ID, start/end timestamps of slices, topics, keywords) in a local database.
@@ -35,7 +35,7 @@ The video ingestion feature will:
 ### Success Criteria
 - [ ] User can successfully ingest an MP4 video file via a CLI command.
 - [ ] Audio is accurately extracted from the video.
-- [ ] Transcription is successfully generated using the Video-Llama model.
+- [ ] Transcription is successfully generated using the Whisper model.
 - [ ] Video content is segmented into logical topics.
 - [ ] All relevant metadata for video slices is stored in the database.
 - [ ] The system handles common errors gracefully (e.g., invalid file path, model loading errors).
@@ -46,11 +46,11 @@ The video ingestion feature will:
 ### Documentation & References (list all context needed to implement the feature)
 ```yaml
 # MUST READ - Include these in your context window
-- url: https://github.com/DAMO-NLP-SG/Video-LLaMA
-  why: Official GitHub repository for Video-LLaMA, including installation and usage.
+- url: https://github.com/openai/whisper
+  why: Official GitHub repository for OpenAI Whisper, including installation and usage.
 
-- url: https://huggingface.co/DAMO-NLP-SG/Video-LLaMA
-  why: Hugging Face page for Video-LLaMA models and checkpoints.
+- url: https://github.com/openai/whisper#available-models-and-languages
+  why: Whisper documentation on available models and their sizes.
 
 - url: https://ffmpeg.org/documentation.html
   why: Official documentation for ffmpeg, specifically for audio extraction from video.
@@ -101,7 +101,7 @@ The video ingestion feature will:
 │   │   ├── __init__.py
 │   │   ├── models.py       # Pydantic models for video/slice metadata
 │   │   ├── audio_extractor.py # Handles audio extraction using ffmpeg/pydub
-│   │   ├── transcriber.py  # Handles transcription using Video-Llama model
+│   │   ├── transcriber.py  # Handles transcription using Whisper model
 │   │   ├── topic_extractor.py # Handles topic modeling and segmentation
 │   │   └── database.py     # Handles SQLite database operations for metadata
 │   └── cli/
@@ -122,7 +122,7 @@ The video ingestion feature will:
 
 ### Known Gotchas of our codebase & Library Quirks
 ```python
-# CRITICAL: Video-Llama models can be large and require significant computational resources (e.g., GPU). Inform users about hardware requirements.
+# CRITICAL: Whisper models can be large and require significant computational resources (e.g., GPU). Inform users about hardware requirements.
 # CRITICAL: Model setup (downloading weights, configuring paths) can be complex. Provide clear, step-by-step instructions.
 # CRITICAL: ffmpeg must be installed and accessible in the system's PATH for audio extraction. Provide clear instructions for users.
 # CRITICAL: Handling various video codecs and formats can be complex; ensure robust error handling for unsupported formats.
@@ -188,9 +188,9 @@ CREATE src/video_ingestion/audio_extractor.py:
   - Function to extract audio from MP4 using `ffmpeg` and `pydub`.
   - Handle temporary audio file storage.
 
-Task 3: Implement Video-Llama Transcriber
+Task 3: Implement Whisper Transcriber
 CREATE src/video_ingestion/transcriber.py:
-  - Function to send video/audio to Video-Llama model for transcription.
+  - Function to send video/audio to Whisper model for transcription.
   - Handle model loading and inference.
   - Implement retry logic for model inference if applicable.
   - Handle potential errors during model execution.
@@ -215,8 +215,7 @@ MODIFY src/cli/commands.py:
 
 Task 7: Environment Variable Setup
 CREATE .env.example:
-  - Add placeholder for `VIDEO_LLAMA_MODEL_PATH` (or similar).
-  - Add instructions for `ffmpeg` installation and Video-Llama model download.
+  - Add clear, detailed instructions for `ffmpeg` installation and Whisper model download/setup.
 
 ```
 
@@ -248,50 +247,41 @@ def extract_audio(video_path: str, output_audio_path: str) -> None:
         # Reason: Provide clear error if ffmpeg fails
         raise RuntimeError(f"ffmpeg audio extraction failed: {e.stderr.decode()}")
 
-# Task 3: Implement Video-Llama Transcriber
+# Task 3: Implement Whisper Transcriber
 # src/video_ingestion/transcriber.py
 import os
-# from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq # Example for a Hugging Face model
-# import torch
-from dotenv import load_dotenv
+import torch
+import whisper
 
-load_dotenv() # Reason: Load environment variables for model paths
+# Global variables for model
+_whisper_model = None
 
-# Placeholder for Video-Llama model loading
-# This will depend on the specific Video-Llama implementation chosen (e.g., Hugging Face, custom repo)
-# model = None
-# processor = None
-
-def load_video_llama_model():
+def load_whisper_model():
     """
-    Loads the Video-Llama model and processor.
-    This is a placeholder and needs to be implemented based on the chosen Video-Llama library.
+    Loads the Whisper model.
+    User MUST install openai-whisper.
     """
-    global model, processor
-    # Example:
-    # model_id = os.getenv("VIDEO_LLAMA_MODEL_ID", "DAMO-NLP-SG/Video-LLaMA")
-    # model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
-    # processor = AutoProcessor.from_pretrained(model_id)
-    # if torch.cuda.is_available():
-    #     model.to("cuda")
-    print("Placeholder: Video-Llama model loading logic goes here.")
-    # CRITICAL: Add actual Video-Llama model loading logic here.
-    # This might involve cloning a repository, downloading weights, etc.
+    global _whisper_model
+    if _whisper_model is None:
+        print("Loading Whisper model (base). This may take some time.")
+        try:
+            _whisper_model = whisper.load_model("base")
+            print("Whisper model loaded successfully.")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load Whisper model. Ensure it's installed and configured correctly: {e}")
+    return _whisper_model
 
 def transcribe_audio(audio_path: str) -> str:
     """
-    Transcribes an audio file using the Video-Llama model.
+    Transcribes an audio file using the Whisper model.
     """
-    # Ensure model is loaded
-    # if model is None or processor is None:
-    #     load_video_llama_model()
-
-    # Example: Placeholder for Video-Llama inference
-    # This will depend on the specific Video-Llama implementation chosen.
-    # For Video-LLaMA, it might involve processing video frames and audio.
-    # For now, a simple placeholder.
-    print(f"Placeholder: Transcribing {audio_path} using Video-Llama.")
-    return "This is a placeholder transcription from Video-Llama."
+    model = load_whisper_model()
+    print(f"Transcribing audio from {audio_path} using Whisper...")
+    try:
+        result = model.transcribe(audio_path)
+        return result["text"]
+    except Exception as e:
+        raise RuntimeError(f"Whisper transcription failed: {e}")
 
 # Task 4: Implement Database Module
 # src/video_ingestion/database.py
@@ -364,7 +354,8 @@ DATABASE:
 
 CONFIG:
   - add to: .env.example
-  - pattern: "VIDEO_LLAMA_MODEL_PATH=/path/to/your/video_llama_model"
+  - pattern: "# Instructions for ffmpeg installation: https://ffmpeg.org/download.html"
+  - pattern: "# Instructions for Whisper setup: Refer to https://github.com/openai/whisper"
 
 ROUTES:
   - add to: src/main.py (CLI commands)
@@ -528,10 +519,10 @@ uv run pytest tests/test_video_ingestion/ -v
 ```bash
 # Manual test:
 # 1. Ensure ffmpeg is installed and in your system's PATH.
-# 2. Create a .env file in the project root with your VIDEO_LLAMA_MODEL_PATH.
-#    Example: VIDEO_LLAMA_MODEL_PATH=/path/to/your/video_llama_model
-# 3. Place a small MP4 video file (e.g., 30 seconds) in a known location.
-# 4. Run the ingestion command:
+# 2. IMPORTANT: Install `openai-whisper` and ensure `torch` is installed. The Whisper model will download automatically on first use.
+# 3. Ensure `ffmpeg` is installed and in your system's PATH.
+# 4. Place a small MP4 video file (e.g., 30 seconds) in a known location.
+# 5. Run the ingestion command:
 #    uv run python src/main.py ingest --video-path /path/to/your/video.mp4
 
 # Expected:
@@ -549,10 +540,11 @@ uv run pytest tests/test_video_ingestion/ -v
 - [ ] Error cases handled gracefully
 - [ ] Logs are informative but not verbose
 - [ ] Documentation updated if needed
+- [ ] Whisper model is confirmed to be loadable and performs actual transcription.
 
 ## Anti-Patterns to Avoid
 - ❌ Don't hardcode model paths or sensitive information.
 - ❌ Don't assume ffmpeg is installed; provide clear instructions and error messages.
 - ❌ Don't process entire large videos in memory; stream or chunk as necessary.
-- ❌ Don't ignore Video-Llama model resource requirements (e.g., GPU, memory).
+- ❌ Don't ignore Whisper model resource requirements (e.g., GPU, memory).
 - ❌ Don't store lists/dictionaries directly in SQLite without serialization (e.g., JSON).
