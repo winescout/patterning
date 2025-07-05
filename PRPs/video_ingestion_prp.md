@@ -14,7 +14,7 @@ This PRP outlines the requirements for the video ingestion feature, allowing use
 ---
 
 ## Goal
-To develop a robust, user-driven video ingestion pipeline that takes local MP4 video files, extracts audio, transcribes it using the Whisper model, identifies topics, and stores relevant metadata in a catalog for future use. The process should be resilient to common video issues and provide clear feedback to the user.
+To develop a robust, user-driven video ingestion pipeline that takes local MP4 video files, extracts audio, transcribes it using the Whisper model, identifies keywords and topics, and stores relevant metadata in a catalog for future use. The process should be resilient to common video issues and provide clear feedback to the user.
 
 ## Why
 - This feature is critical for the product, as users must be able to process their own purchased video content.
@@ -27,8 +27,10 @@ The video ingestion feature will:
 - Validate the input video file (e.g., existence, format).
 - Extract the audio track from the video.
 - Transcribe the audio using the Whisper model.
-    - Process the transcription to identify key topics and segment the video into logical slices, storing these as timestamps for deeplinking rather than creating new video clips.
-    - Identify and flag newly discovered topics for user review and approval.
+    - Process the transcription using spaCy NLP to identify specific trading/financial keywords (e.g., price action, support, resistance, technical analysis terms) and their exact timestamps, returning a dictionary mapping each keyword to all its timestamp occurrences.
+    - Use lemmatization for enhanced matching (e.g., "trading" matches "trade", "levels" matches "level").
+    - Store timestamps for deeplinking rather than creating new video clips.
+    - Identify and flag newly discovered keywords for user review and approval.
 - Store video metadata (original path, unique ID, start/end timestamps of slices, topics, keywords) in a local database.
 - Provide progress updates and error handling during the ingestion process.
 
@@ -36,7 +38,9 @@ The video ingestion feature will:
 - [ ] User can successfully ingest an MP4 video file via a CLI command.
 - [ ] Audio is accurately extracted from the video.
 - [ ] Transcription is successfully generated using the Whisper model.
-- [ ] Video content is segmented into logical topics.
+- [ ] Specific keywords and their timestamps are successfully extracted from the transcription using spaCy NLP.
+- [ ] Keywords are returned in dictionary format: `{keyword: [{"start": 1.2, "end": 1.5}, ...]}`.
+- [ ] Lemmatization correctly matches word variations (e.g., "trading" → "trade").
 - [ ] All relevant metadata for video slices is stored in the database.
 - [ ] The system handles common errors gracefully (e.g., invalid file path, model loading errors).
 - [ ] Progress is reported to the user during long-running operations.
@@ -60,6 +64,12 @@ The video ingestion feature will:
 
 - url: https://docs.python.org/3/library/sqlite3.html
   why: Python's built-in SQLite documentation for local database storage.
+
+- url: https://spacy.io/usage/linguistic-features
+  why: spaCy documentation for NLP features including lemmatization and tokenization.
+
+- url: https://spacy.io/usage/models
+  why: spaCy model installation guide for en_core_web_sm model.
 
 - file: GEMINI.md
   why: Project-specific guidelines and AI behavior rules.
@@ -125,8 +135,10 @@ The video ingestion feature will:
 # CRITICAL: Whisper models can be large and require significant computational resources (e.g., GPU). Inform users about hardware requirements.
 # CRITICAL: Model setup (downloading weights, configuring paths) can be complex. Provide clear, step-by-step instructions.
 # CRITICAL: ffmpeg must be installed and accessible in the system's PATH for audio extraction. Provide clear instructions for users.
+# CRITICAL: spaCy en_core_web_sm model must be installed: `python -m spacy download en_core_web_sm`. Handle OSError if model is missing.
 # CRITICAL: Handling various video codecs and formats can be complex; ensure robust error handling for unsupported formats.
 # CRITICAL: Large video files will result in long transcription times. Consider chunking or progress indicators.
+# CRITICAL: spaCy lemmatization may produce unexpected results (e.g., "levels" → "level"). Design keyword extraction to handle this appropriately.
 # CRITICAL: Ensure proper handling of model paths and configurations (e.g., via environment variables).
 ```
 
@@ -201,11 +213,12 @@ CREATE src/video_ingestion/database.py:
   - Functions to store and retrieve `VideoMetadata` and `VideoSlice` objects.
   - Ensure proper indexing for efficient lookups.
 
-Task 5: Implement Topic Extraction and Segmentation
+Task 5: Implement Keyword Extraction with spaCy
 CREATE src/video_ingestion/topic_extractor.py:
-  - Function to take a full transcript and segment it into logical topics.
-  - Use NLP techniques (e.g., sentence tokenization, keyword extraction, simple topic modeling).
-  - Generate `VideoSlice` objects.
+  - Function to extract trading/financial keywords from Whisper transcription with word-level timestamps.
+  - Use spaCy NLP for enhanced keyword matching including lemmatization.
+  - Return dictionary format: `{keyword: [{"start": 1.2, "end": 1.5}, ...]}`.
+  - Handle punctuation cleaning and avoid duplicate timestamps.
 
 Task 6: Orchestrate Ingestion Process
 MODIFY src/cli/commands.py:
@@ -216,6 +229,7 @@ MODIFY src/cli/commands.py:
 Task 7: Environment Variable Setup
 CREATE .env.example:
   - Add clear, detailed instructions for `ffmpeg` installation and Whisper model download/setup.
+  - Add spaCy model installation instructions: `python -m spacy download en_core_web_sm`.
 
 ```
 

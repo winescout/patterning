@@ -37,16 +37,30 @@ def test_extract_topics_with_timestamps_basic():
 
     extracted_keywords = extract_topics_with_timestamps(whisper_result)
 
-    assert len(extracted_keywords) == 3
-    assert extracted_keywords[0]["keyword"] == "price"
-    assert extracted_keywords[0]["start"] == 1.3
-    assert extracted_keywords[0]["end"] == 1.7
-    assert extracted_keywords[1]["keyword"] == "action"
-    assert extracted_keywords[1]["start"] == 1.7
-    assert extracted_keywords[1]["end"] == 2.2
-    assert extracted_keywords[2]["keyword"] == "support"
-    assert extracted_keywords[2]["start"] == 5.2
-    assert extracted_keywords[2]["end"] == 5.8
+    # Check that we have the expected keywords
+    # Should find: price, action, support, and level (lemma of "levels.")
+    assert len(extracted_keywords) == 4
+    assert "price" in extracted_keywords
+    assert "action" in extracted_keywords
+    assert "support" in extracted_keywords
+    assert "level" in extracted_keywords
+    
+    # Check timestamp format for each keyword
+    assert len(extracted_keywords["price"]) == 1
+    assert extracted_keywords["price"][0]["start"] == 1.3
+    assert extracted_keywords["price"][0]["end"] == 1.7
+    
+    assert len(extracted_keywords["action"]) == 1
+    assert extracted_keywords["action"][0]["start"] == 1.7
+    assert extracted_keywords["action"][0]["end"] == 2.2
+    
+    assert len(extracted_keywords["support"]) == 1
+    assert extracted_keywords["support"][0]["start"] == 5.2
+    assert extracted_keywords["support"][0]["end"] == 5.8
+    
+    assert len(extracted_keywords["level"]) == 1
+    assert extracted_keywords["level"][0]["start"] == 5.8
+    assert extracted_keywords["level"][0]["end"] == 6.5
 
 def test_extract_topics_with_timestamps_no_keywords():
     """Test with a transcript containing no keywords of interest."""
@@ -70,12 +84,14 @@ def test_extract_topics_with_timestamps_no_keywords():
     }
     extracted_keywords = extract_topics_with_timestamps(whisper_result)
     assert len(extracted_keywords) == 0
+    assert isinstance(extracted_keywords, dict)
 
 def test_extract_topics_with_timestamps_empty_result():
     """Test with an empty Whisper result."""
     whisper_result = {"text": "", "segments": []}
     extracted_keywords = extract_topics_with_timestamps(whisper_result)
     assert len(extracted_keywords) == 0
+    assert isinstance(extracted_keywords, dict)
 
 def test_extract_topics_with_timestamps_no_words_in_segment():
     """Test with segments that have no word information."""
@@ -93,3 +109,36 @@ def test_extract_topics_with_timestamps_no_words_in_segment():
     }
     extracted_keywords = extract_topics_with_timestamps(whisper_result)
     assert len(extracted_keywords) == 0
+    assert isinstance(extracted_keywords, dict)
+
+def test_extract_topics_with_timestamps_multiple_occurrences():
+    """Test keywords appearing multiple times with different timestamps."""
+    whisper_result = {
+        "text": "Price goes up, then price goes down.",
+        "segments": [
+            {
+                "id": 0,
+                "start": 0.0,
+                "end": 6.0,
+                "text": "Price goes up, then price goes down.",
+                "words": [
+                    {"word": "Price", "start": 0.0, "end": 0.5},
+                    {"word": "goes", "start": 0.5, "end": 0.8},
+                    {"word": "up,", "start": 0.8, "end": 1.0},
+                    {"word": "then", "start": 1.0, "end": 1.3},
+                    {"word": "price", "start": 1.3, "end": 1.7},
+                    {"word": "goes", "start": 1.7, "end": 2.0},
+                    {"word": "down.", "start": 2.0, "end": 2.5}
+                ]
+            }
+        ]
+    }
+    extracted_keywords = extract_topics_with_timestamps(whisper_result)
+    
+    # Should find "price" twice (case-insensitive)
+    assert "price" in extracted_keywords
+    assert len(extracted_keywords["price"]) == 2
+    assert extracted_keywords["price"][0]["start"] == 0.0
+    assert extracted_keywords["price"][0]["end"] == 0.5
+    assert extracted_keywords["price"][1]["start"] == 1.3
+    assert extracted_keywords["price"][1]["end"] == 1.7
