@@ -30,9 +30,9 @@ def transcribe_audio(audio_path: str) -> str:
     """
     Transcribes an audio file using the Whisper model.
     """
-    model = load_whisper_model()
-    print(f"Transcribing audio from {audio_path} using Whisper...")
     try:
+        model = load_whisper_model()
+        print(f"Transcribing audio from {audio_path} using Whisper...")
         result = model.transcribe(audio_path)
         return result["text"]
     except Exception as e:
