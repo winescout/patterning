@@ -26,7 +26,7 @@ The video ingestion feature will:
 - Accept a local file path to an MP4 video as input.
 - Validate the input video file (e.g., existence, format).
 - Extract the audio track from the video.
-- Transcribe the audio using the Gemini API.
+- Transcribe the audio using the Video-Llama model.
     - Process the transcription to identify key topics and segment the video into logical slices, storing these as timestamps for deeplinking rather than creating new video clips.
     - Identify and flag newly discovered topics for user review and approval.
 - Store video metadata (original path, unique ID, start/end timestamps of slices, topics, keywords) in a local database.
@@ -35,10 +35,10 @@ The video ingestion feature will:
 ### Success Criteria
 - [ ] User can successfully ingest an MP4 video file via a CLI command.
 - [ ] Audio is accurately extracted from the video.
-- [ ] Transcription is successfully generated using the Gemini API.
+- [ ] Transcription is successfully generated using the Video-Llama model.
 - [ ] Video content is segmented into logical topics.
 - [ ] All relevant metadata for video slices is stored in the database.
-- [ ] The system handles common errors gracefully (e.g., invalid file path, API errors).
+- [ ] The system handles common errors gracefully (e.g., invalid file path, model loading errors).
 - [ ] Progress is reported to the user during long-running operations.
 
 ## All Needed Context
@@ -46,11 +46,11 @@ The video ingestion feature will:
 ### Documentation & References (list all context needed to implement the feature)
 ```yaml
 # MUST READ - Include these in your context window
-- url: https://ai.google.dev/docs/gemini_api_overview
-  why: Overview of the Gemini API, authentication, and usage.
+- url: https://github.com/DAMO-NLP-SG/Video-LLaMA
+  why: Official GitHub repository for Video-LLaMA, including installation and usage.
 
-- url: https://ai.google.dev/docs/models/gemini
-  why: Details on Gemini models, capabilities, and pricing for transcription.
+- url: https://huggingface.co/DAMO-NLP-SG/Video-LLaMA
+  why: Hugging Face page for Video-LLaMA models and checkpoints.
 
 - url: https://ffmpeg.org/documentation.html
   why: Official documentation for ffmpeg, specifically for audio extraction from video.
@@ -101,7 +101,7 @@ The video ingestion feature will:
 │   │   ├── __init__.py
 │   │   ├── models.py       # Pydantic models for video/slice metadata
 │   │   ├── audio_extractor.py # Handles audio extraction using ffmpeg/pydub
-│   │   ├── transcriber.py  # Handles transcription using Gemini API
+│   │   ├── transcriber.py  # Handles transcription using Video-Llama model
 │   │   ├── topic_extractor.py # Handles topic modeling and segmentation
 │   │   └── database.py     # Handles SQLite database operations for metadata
 │   └── cli/
@@ -115,18 +115,19 @@ The video ingestion feature will:
 │   │   ├── test_transcriber.py
 │   │   ├── test_topic_extractor.py
 │   │   └── test_database.py
-├── .env.example            # Example for API keys and other environment variables
+├── .env.example            # Example for model paths and other environment variables
 ├── database/
 │   └── video_catalog.db    # SQLite database file (or similar)
 ```
 
 ### Known Gotchas of our codebase & Library Quirks
 ```python
-# CRITICAL: Gemini API has rate limits and associated costs. Implement retry mechanisms and inform the user about potential costs.
+# CRITICAL: Video-Llama models can be large and require significant computational resources (e.g., GPU). Inform users about hardware requirements.
+# CRITICAL: Model setup (downloading weights, configuring paths) can be complex. Provide clear, step-by-step instructions.
 # CRITICAL: ffmpeg must be installed and accessible in the system's PATH for audio extraction. Provide clear instructions for users.
 # CRITICAL: Handling various video codecs and formats can be complex; ensure robust error handling for unsupported formats.
-# CRITICAL: Large video files will result in long transcription times and potentially high API costs. Consider chunking or progress indicators.
-# CRITICAL: Ensure proper handling of API keys (e.g., via environment variables using python_dotenv).
+# CRITICAL: Large video files will result in long transcription times. Consider chunking or progress indicators.
+# CRITICAL: Ensure proper handling of model paths and configurations (e.g., via environment variables).
 ```
 
 ## Implementation Blueprint
@@ -187,12 +188,12 @@ CREATE src/video_ingestion/audio_extractor.py:
   - Function to extract audio from MP4 using `ffmpeg` and `pydub`.
   - Handle temporary audio file storage.
 
-Task 3: Implement Gemini Transcriber
+Task 3: Implement Video-Llama Transcriber
 CREATE src/video_ingestion/transcriber.py:
-  - Function to send audio to Gemini API for transcription.
-  - Handle API key loading from environment variables.
-  - Implement retry logic for API calls.
-  - Handle API rate limits and errors.
+  - Function to send video/audio to Video-Llama model for transcription.
+  - Handle model loading and inference.
+  - Implement retry logic for model inference if applicable.
+  - Handle potential errors during model execution.
 
 Task 4: Implement Database Module
 CREATE src/video_ingestion/database.py:
@@ -214,8 +215,8 @@ MODIFY src/cli/commands.py:
 
 Task 7: Environment Variable Setup
 CREATE .env.example:
-  - Add placeholder for `GEMINI_API_KEY`.
-  - Add instructions for `ffmpeg` installation.
+  - Add placeholder for `VIDEO_LLAMA_MODEL_PATH` (or similar).
+  - Add instructions for `ffmpeg` installation and Video-Llama model download.
 
 ```
 
@@ -247,35 +248,50 @@ def extract_audio(video_path: str, output_audio_path: str) -> None:
         # Reason: Provide clear error if ffmpeg fails
         raise RuntimeError(f"ffmpeg audio extraction failed: {e.stderr.decode()}")
 
-# Task 3: Implement Gemini Transcriber
+# Task 3: Implement Video-Llama Transcriber
 # src/video_ingestion/transcriber.py
 import os
-import google.generativeai as genai
+# from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq # Example for a Hugging Face model
+# import torch
 from dotenv import load_dotenv
 
-load_dotenv() # Reason: Load environment variables for API key
+load_dotenv() # Reason: Load environment variables for model paths
+
+# Placeholder for Video-Llama model loading
+# This will depend on the specific Video-Llama implementation chosen (e.g., Hugging Face, custom repo)
+# model = None
+# processor = None
+
+def load_video_llama_model():
+    """
+    Loads the Video-Llama model and processor.
+    This is a placeholder and needs to be implemented based on the chosen Video-Llama library.
+    """
+    global model, processor
+    # Example:
+    # model_id = os.getenv("VIDEO_LLAMA_MODEL_ID", "DAMO-NLP-SG/Video-LLaMA")
+    # model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
+    # processor = AutoProcessor.from_pretrained(model_id)
+    # if torch.cuda.is_available():
+    #     model.to("cuda")
+    print("Placeholder: Video-Llama model loading logic goes here.")
+    # CRITICAL: Add actual Video-Llama model loading logic here.
+    # This might involve cloning a repository, downloading weights, etc.
 
 def transcribe_audio(audio_path: str) -> str:
     """
-    Transcribes an audio file using the Gemini API.
+    Transcribes an audio file using the Video-Llama model.
     """
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel('gemini-pro') # Reason: gemini-pro is good for text generation
+    # Ensure model is loaded
+    # if model is None or processor is None:
+    #     load_video_llama_model()
 
-    with open(audio_path, "rb") as audio_file:
-        audio_content = audio_file.read()
-
-    try:
-        # CRITICAL: Handle potential API errors, rate limits, and cost implications
-        response = model.generate_content(
-            contents=[
-                {"mime_type": "audio/mpeg", "data": audio_content} # Assuming mp3 for simplicity, adjust as needed
-            ]
-        )
-        return response.text
-    except Exception as e:
-        # Reason: Catch broad exceptions for API failures
-        raise RuntimeError(f"Gemini API transcription failed: {e}")
+    # Example: Placeholder for Video-Llama inference
+    # This will depend on the specific Video-Llama implementation chosen.
+    # For Video-LLaMA, it might involve processing video frames and audio.
+    # For now, a simple placeholder.
+    print(f"Placeholder: Transcribing {audio_path} using Video-Llama.")
+    return "This is a placeholder transcription from Video-Llama."
 
 # Task 4: Implement Database Module
 # src/video_ingestion/database.py
@@ -317,7 +333,7 @@ def insert_video_metadata(db_path: str, metadata: Dict):
     cursor.execute("""
         INSERT INTO videos (video_id, original_path, file_hash, ingestion_timestamp)
         VALUES (?, ?, ?, ?)
-    """, (metadata["video_id"], metadata["original_path"], metadata["file_hash"], metadata["ingestion_timestamp"]))
+    """, (metadata["video_id"], metadata["original_path"], metadata["file_hash"], metadata["ingestion_timestamp"])))
     conn.commit()
     conn.close()
 
@@ -334,7 +350,7 @@ def insert_video_slice(db_path: str, slice_data: Dict):
         str(slice_data.get("topics", [])), # Reason: Store list as JSON string
         str(slice_data.get("keywords", [])), # Reason: Store list as JSON string
         slice_data.get("summary")
-    ))
+    )))
     conn.commit()
     conn.close()
 
@@ -348,7 +364,7 @@ DATABASE:
 
 CONFIG:
   - add to: .env.example
-  - pattern: "GEMINI_API_KEY=YOUR_GEMINI_API_KEY"
+  - pattern: "VIDEO_LLAMA_MODEL_PATH=/path/to/your/video_llama_model"
 
 ROUTES:
   - add to: src/main.py (CLI commands)
@@ -399,33 +415,29 @@ def test_extract_audio_invalid_path():
 import pytest
 import os
 from unittest.mock import patch, MagicMock
-from src.video_ingestion.transcriber import transcribe_audio
+from src.video_ingestion.transcriber import transcribe_audio, load_video_llama_model
 
-@patch('google.generativeai.GenerativeModel')
-@patch('os.getenv', return_value='dummy_api_key')
-def test_transcribe_audio_success(mock_getenv, mock_generative_model, tmp_path):
-    """Test successful audio transcription."""
-    mock_instance = mock_generative_model.return_value
-    mock_instance.generate_content.return_value.text = "This is a test transcription."
-
+@patch('src.video_ingestion.transcriber.model', None) # Ensure model is not pre-loaded
+@patch('src.video_ingestion.transcriber.processor', None) # Ensure processor is not pre-loaded
+@patch('src.video_ingestion.transcriber.load_video_llama_model') # Mock the loading function
+def test_transcribe_audio_success(mock_load_model, tmp_path):
+    """Test successful audio transcription with Video-Llama placeholder."""
     dummy_audio_path = tmp_path / "dummy_audio.mp3"
     dummy_audio_path.write_bytes(b"dummy audio data")
 
     transcript = transcribe_audio(str(dummy_audio_path))
-    assert transcript == "This is a test transcription."
-    mock_instance.generate_content.assert_called_once()
+    assert transcript == "This is a placeholder transcription from Video-Llama."
+    mock_load_model.assert_called_once() # Ensure model loading was attempted
 
-@patch('google.generativeai.GenerativeModel')
-@patch('os.getenv', return_value='dummy_api_key')
-def test_transcribe_audio_api_failure(mock_getenv, mock_generative_model, tmp_path):
-    """Test audio transcription when Gemini API fails."""
-    mock_instance = mock_generative_model.return_value
-    mock_instance.generate_content.side_effect = Exception("API error")
-
+@patch('src.video_ingestion.transcriber.model', None)
+@patch('src.video_ingestion.transcriber.processor', None)
+@patch('src.video_ingestion.transcriber.load_video_llama_model', side_effect=Exception("Model load error"))
+def test_transcribe_audio_model_load_failure(mock_load_model, tmp_path):
+    """Test audio transcription when Video-Llama model loading fails."""
     dummy_audio_path = tmp_path / "dummy_audio.mp3"
     dummy_audio_path.write_bytes(b"dummy audio data")
 
-    with pytest.raises(RuntimeError, match="Gemini API transcription failed: API error"):
+    with pytest.raises(RuntimeError, match="Video-Llama transcription failed: Model load error"):
         transcribe_audio(str(dummy_audio_path))
 
 # CREATE tests/test_video_ingestion/test_database.py
@@ -516,8 +528,8 @@ uv run pytest tests/test_video_ingestion/ -v
 ```bash
 # Manual test:
 # 1. Ensure ffmpeg is installed and in your system's PATH.
-# 2. Create a .env file in the project root with your GEMINI_API_KEY.
-#    Example: GEMINI_API_KEY=YOUR_API_KEY_HERE
+# 2. Create a .env file in the project root with your VIDEO_LLAMA_MODEL_PATH.
+#    Example: VIDEO_LLAMA_MODEL_PATH=/path/to/your/video_llama_model
 # 3. Place a small MP4 video file (e.g., 30 seconds) in a known location.
 # 4. Run the ingestion command:
 #    uv run python src/main.py ingest --video-path /path/to/your/video.mp4
@@ -538,11 +550,9 @@ uv run pytest tests/test_video_ingestion/ -v
 - [ ] Logs are informative but not verbose
 - [ ] Documentation updated if needed
 
----
-
 ## Anti-Patterns to Avoid
-- ❌ Don't hardcode API keys or sensitive information.
+- ❌ Don't hardcode model paths or sensitive information.
 - ❌ Don't assume ffmpeg is installed; provide clear instructions and error messages.
 - ❌ Don't process entire large videos in memory; stream or chunk as necessary.
-- ❌ Don't ignore Gemini API rate limits; implement backoff and retry.
+- ❌ Don't ignore Video-Llama model resource requirements (e.g., GPU, memory).
 - ❌ Don't store lists/dictionaries directly in SQLite without serialization (e.g., JSON).
