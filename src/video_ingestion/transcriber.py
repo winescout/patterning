@@ -16,6 +16,8 @@ def load_whisper_model():
     """
     global _whisper_model
     if _whisper_model is None:
+        if torch is None:
+            raise RuntimeError("PyTorch is not installed. Please install it to use Whisper.")
         print("Loading Whisper model (base). This may take some time.")
         try:
             _whisper_model = whisper.load_model("base")
