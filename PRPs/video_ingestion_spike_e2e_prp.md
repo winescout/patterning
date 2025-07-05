@@ -27,7 +27,7 @@ This spike will implement a functional subset of the video ingestion pipeline:
 - Accepting a local file path to an MP4 video as input.
 - Extracting the audio track from the video using `ffmpeg`.
 - Loading and using the Whisper model to transcribe the extracted audio.
-- Processing the transcription to identify key topics and their timestamps.
+- Processing the transcription to identify specific keywords (e.g., price action, technical analysis terms) and their exact timestamps.
 - Generating a markdown file containing the full transcript and a structured list of identified topics with their start and end timestamps.
 - Providing clear feedback on the success or failure of each step, especially regarding external tool/model setup and execution.
 
@@ -35,7 +35,7 @@ This spike will implement a functional subset of the video ingestion pipeline:
 - [ ] User can run a CLI command to initiate the spike.
 - [ ] `ffmpeg` successfully extracts audio from a provided MP4 video.
 - [ ] The Whisper model is successfully loaded and performs actual transcription.
-- [ ] Topics and their timestamps are successfully extracted from the transcription.
+- [ ] Specific keywords and their timestamps are successfully extracted from the transcription.
 - [ ] A markdown file is generated with the video's transcript and a structured list of topics/timestamps.
 - [ ] Clear error messages are provided if `ffmpeg` or Video-Llama operations fail.
 - [ ] The generated markdown file is readable and contains the expected information.
@@ -164,17 +164,17 @@ CREATE src/video_ingestion/transcriber.py:
   - Implement `transcribe_audio()` to perform actual transcription using the loaded Whisper model.
   - This task will require the user to follow Whisper installation instructions.
 
-Task 4: Implement Topic Extraction and Timestamping
+Task 4: Implement Keyword and Timestamp Extraction
 CREATE src/video_ingestion/topic_extractor.py:
-  - Function to take a full transcript and segment it into logical topics.
-  - For this spike, focus on sentence-level segmentation and basic keyword extraction.
-  - Associate timestamps with topics (e.g., by assuming uniform distribution of words within a segment or using more advanced methods if Video-Llama provides word-level timestamps).
+  - Function to take a Whisper transcription result (including word-level timestamps).
+  - Identify predefined keywords related to 'price action' and 'technical analysis'.
+  - Extract each keyword along with its start and end timestamps.
 
 Task 5: Orchestrate Spike Process and Markdown Output
 MODIFY src/cli/commands.py:
   - Integrate `audio_extractor`, `transcriber`, and `topic_extractor` modules within the `spike_ingest` command.
   - Implement progress reporting and error handling.
-  - Format the full transcript and extracted topics/timestamps into a readable markdown file.
+  - Format the extracted keywords and timestamps into a readable markdown file.
 
 Task 6: Environment Variable and Setup Instructions
 CREATE .env.example:
@@ -248,7 +248,7 @@ def transcribe_audio(audio_path: str) -> str:
     except Exception as e:
         raise RuntimeError(f"Whisper transcription failed: {e}")
 
-# Task 4: Implement Topic Extraction and Timestamping
+# Task 4: Implement Keyword and Timestamp Extraction
 # src/video_ingestion/topic_extractor.py
 import spacy
 from typing import List, Dict, Any
@@ -258,47 +258,34 @@ from typing import List, Dict, Any
 try:
     _nlp = spacy.load("en_core_web_sm")
 except OSError:
-    print("Downloading spaCy model 'en_core_web_sm' (first time only)...")
-    spacy.cli.download("en_core_web_sm")
+    
     _nlp = spacy.load("en_core_web_sm")
 
-def extract_topics_with_timestamps(transcript: str, video_duration_seconds: float) -> List[Dict[str, Any]]:
+def extract_topics_with_timestamps(whisper_result: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    Extracts topics and estimates timestamps from a transcript.
-    For this spike, we'll do sentence-level segmentation and assign approximate timestamps.
+    Extracts specific keywords and their timestamps from a Whisper transcription result.
+    Focuses on 'price action' and 'technical analysis' related terms.
     """
-    doc = _nlp(transcript)
-    sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
+    keywords_of_interest = [
+        "price", "action", "support", "resistance", "trend", "breakout",
+        "candlestick", "chart", "indicator", "moving average", "RSI", "MACD",
+        "volume", "pattern", "bearish", "bullish", "long", "short", "trade"
+    ]
 
-    if not sentences:
-        return []
+    extracted_keywords = []
 
-    # Estimate time per sentence for basic timestamping
-    words_per_second = len(transcript.split()) / video_duration_seconds if video_duration_seconds > 0 else 0
-    
-    topics_with_timestamps = []
-    current_time = 0.0
-
-    for sentence in sentences:
-        sentence_words = len(sentence.split())
-        estimated_duration = sentence_words / words_per_second if words_per_second > 0 else 0
-        
-        start_time = current_time
-        end_time = current_time + estimated_duration
-
-        # Basic keyword extraction for topic
-        keywords = [token.text.lower() for token in _nlp(sentence) if token.pos_ in ["NOUN", "PROPN", "VERB"] and not token.is_stop]
-        topic_summary = " ".join(sorted(list(set(keywords)))) # Simple topic summary from keywords
-
-        topics_with_timestamps.append({
-            "topic": topic_summary if topic_summary else sentence[:50] + "...", # Fallback if no keywords
-            "start_time": round(start_time, 2),
-            "end_time": round(end_time, 2),
-            "text_segment": sentence
-        })
-        current_time = end_time
-    
-    return topics_with_timestamps
+    if "segments" in whisper_result:
+        for segment in whisper_result["segments"]:
+            if "words" in segment:
+                for word_info in segment["words"]:
+                    word = word_info["word"].lower().strip()
+                    if word in keywords_of_interest:
+                        extracted_keywords.append({
+                            "keyword": word,
+                            "start": word_info["start"],
+                            "end": word_info["end"]
+                        })
+    return extracted_keywords
 
 # Task 5: Orchestrate Spike Process and Markdown Output (Example in src/cli/commands.py)
 # src/cli/commands.py
@@ -531,7 +518,7 @@ uv run pytest tests/test_video_ingestion/ -v
 # Expected Content of Markdown File:
 # - A clear title with the video filename.
 # - The full transcript generated by Whisper.
-# - A structured list of identified topics, each with estimated start and end timestamps, and the corresponding text segment.
+# - A structured list of identified keywords, each with estimated start and end timestamps.
 
 # Expected Failures (and their messages):
 # - If ffmpeg is not installed: "Spike failed: ffmpeg not found. Please install ffmpeg and ensure it's in your system's PATH."
@@ -549,7 +536,7 @@ uv run pytest tests/test_video_ingestion/ -v
 - [ ] Logs are informative but not verbose.
 - [ ] `ffmpeg` is confirmed to be installed and working.
 - [ ] Whisper model is confirmed to be loadable and performs actual transcription.
-- [ ] The generated markdown file contains the full transcript and correctly formatted topics with timestamps.
+- [ ] The generated markdown file contains the full transcript and correctly formatted keywords with timestamps.
 
 ---
 
