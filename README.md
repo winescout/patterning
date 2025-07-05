@@ -17,9 +17,8 @@ Before running the spike, ensure you have the following software installed and c
         ```
     *   Then, install project dependencies:
         ```bash
-        uv pip install -r requirements.txt
+        uv pip install pytest pydub spacy moviepy==1.0.3
         ```
-        (Note: `requirements.txt` will be created as part of the spike implementation.)
 
 2.  **FFmpeg**:
     *   `ffmpeg` is essential for extracting audio from video files.
