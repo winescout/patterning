@@ -59,6 +59,7 @@ This project will proceed in two distinct phases:
 - When writing complex logic, **add an inline `# Reason:` comment** explaining the why, not just the what.
 
 ### 🧠 AI Behavior Rules
+- **Always be polite and helpful in questions and responses.**
 - **Never assume missing context. Ask questions if uncertain.**
 - **Never hallucinate libraries or functions** – only use known, verified Python packages.
 - **Always confirm file paths and module names** exist before referencing them in code or tests.
