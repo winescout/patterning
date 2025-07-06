@@ -14,11 +14,12 @@ This PRP outlines the requirements for the video ingestion feature, allowing use
 ---
 
 ## Goal
-To develop a robust, user-driven video ingestion pipeline that takes local MP4 video files, extracts audio, transcribes it using the Whisper model, identifies keywords and topics, and stores relevant metadata in a catalog for future use. The process should be resilient to common video issues and provide clear feedback to the user.
+To develop a robust, user-driven video ingestion pipeline that takes local MP4 video files, extracts audio and screenshots, transcribes using the Whisper model, and identifies keywords with timestamps. The pipeline outputs structured reports and media files for further processing by the catalog system. The process should be resilient to common video issues and provide clear feedback to the user.
 
 ## Why
 - This feature is critical for the product, as users must be able to process their own purchased video content.
-- It enables the core functionality of the recommendation engine by creating a searchable catalog of video slices.
+- It provides the foundation for the catalog database system by generating structured data files.
+- It establishes the core video processing pipeline that other features will build upon.
 - It provides a clear entry point for users to utilize the software with their existing video library.
 
 ## What
@@ -28,11 +29,9 @@ The video ingestion feature will:
 - Extract the audio track from the video.
 - Capture screenshots every 4 seconds using ffmpeg, saving them with timestamped filenames that include the original video name and timestamp (e.g., `video_name_004s.jpg`, `video_name_008s.jpg`).
 - Transcribe the audio using the Whisper model.
-    - Process the transcription using spaCy NLP to identify specific trading/financial keywords (e.g., price action, support, resistance, technical analysis terms) and their exact timestamps, returning a dictionary mapping each keyword to all its timestamp occurrences.
-    - Use lemmatization for enhanced matching (e.g., "trading" matches "trade", "levels" matches "level").
-    - Store timestamps for deeplinking rather than creating new video clips.
-    - Identify and flag newly discovered keywords for user review and approval.
-- Store video metadata (original path, unique ID, start/end timestamps of slices, topics, keywords) in a local database.
+- Process the transcription using spaCy NLP to identify specific trading/financial keywords (e.g., price action, support, resistance, technical analysis terms) and their exact timestamps, returning a dictionary mapping each keyword to all its timestamp occurrences.
+- Use lemmatization for enhanced matching (e.g., "trading" matches "trade", "levels" matches "level").
+- Generate structured markdown reports containing the full transcript, identified keywords with timestamps, and references to captured screenshots.
 - Organize outputs into structured directories (`output/reports/`, `output/screenshots/`) for better file management.
 - Provide progress updates and error handling during the ingestion process.
 
@@ -45,7 +44,7 @@ The video ingestion feature will:
 - [ ] Specific keywords and their timestamps are successfully extracted from the transcription using spaCy NLP.
 - [ ] Keywords are returned in dictionary format: `{keyword: [{"start": 1.2, "end": 1.5}, ...]}`.
 - [ ] Lemmatization correctly matches word variations (e.g., "trading" → "trade").
-- [ ] All relevant metadata for video slices is stored in the database.
+- [ ] Structured markdown reports are generated with transcript, keywords, and screenshot references.
 - [ ] Outputs are organized into structured directories (`output/reports/`, `output/screenshots/`).
 - [ ] The system handles common errors gracefully (e.g., invalid file path, model loading errors).
 - [ ] Progress is reported to the user during long-running operations.
@@ -114,12 +113,10 @@ The video ingestion feature will:
 │   ├── main.py             # CLI entry point, orchestrates ingestion
 │   ├── video_ingestion/
 │   │   ├── __init__.py
-│   │   ├── models.py       # Pydantic models for video/slice metadata
 │   │   ├── audio_extractor.py # Handles audio extraction using ffmpeg/pydub
 │   │   ├── image_extractor.py # Handles screenshot extraction using ffmpeg
 │   │   ├── transcriber.py  # Handles transcription using Whisper model
-│   │   ├── topic_extractor.py # Handles topic modeling and segmentation
-│   │   └── database.py     # Handles SQLite database operations for metadata
+│   │   └── topic_extractor.py # Handles keyword extraction and timestamping
 │   └── cli/
 │       ├── __init__.py
 │       └── commands.py     # Defines CLI commands for ingestion
@@ -130,64 +127,27 @@ The video ingestion feature will:
 │   │   ├── test_audio_extractor.py
 │   │   ├── test_image_extractor.py
 │   │   ├── test_transcriber.py
-│   │   ├── test_topic_extractor.py
-│   │   └── test_database.py
+│   │   └── test_topic_extractor.py
 ├── output/
 │   ├── screenshots/        # Directory for extracted screenshots
-│   └── reports/           # Directory for generated reports
+│   └── reports/           # Directory for generated markdown reports
 ├── .env.example            # Example for model paths and other environment variables
-├── database/
-│   └── video_catalog.db    # SQLite database file (or similar)
 ```
 
 ### Known Gotchas of our codebase & Library Quirks
 ```python
 # CRITICAL: Whisper models can be large and require significant computational resources (e.g., GPU). Inform users about hardware requirements.
 # CRITICAL: Model setup (downloading weights, configuring paths) can be complex. Provide clear, step-by-step instructions.
-# CRITICAL: ffmpeg must be installed and accessible in the system's PATH for audio extraction. Provide clear instructions for users.
+# CRITICAL: ffmpeg must be installed and accessible in the system's PATH for audio extraction and screenshot capture. Provide clear instructions for users.
 # CRITICAL: spaCy en_core_web_sm model must be installed: `python -m spacy download en_core_web_sm`. Handle OSError if model is missing.
 # CRITICAL: Handling various video codecs and formats can be complex; ensure robust error handling for unsupported formats.
-# CRITICAL: Large video files will result in long transcription times. Consider chunking or progress indicators.
+# CRITICAL: Large video files will result in long transcription times. Provide progress indicators for user feedback.
 # CRITICAL: spaCy lemmatization may produce unexpected results (e.g., "levels" → "level"). Design keyword extraction to handle this appropriately.
-# CRITICAL: Ensure proper handling of model paths and configurations (e.g., via environment variables).
+# CRITICAL: Screenshot extraction timing must align with transcription timestamps for accurate report generation.
+# CRITICAL: Markdown report generation should use relative paths for screenshot references to maintain portability.
 ```
 
 ## Implementation Blueprint
-
-### Data models and structure
-
-Create the core data models, we ensure type safety and consistency.
-```python
-# src/video_ingestion/models.py
-
-from pydantic import BaseModel
-from typing import List, Dict, Optional
-
-class VideoMetadata(BaseModel):
-    """Metadata for an ingested video."""
-    video_id: str  # Unique ID for the video
-    original_path: str # Original file path provided by the user
-    file_hash: str # Hash of the video file to detect changes/duplicates
-    ingestion_timestamp: str # Timestamp of when the video was ingested
-
-class VideoSlice(BaseModel):
-    """Metadata for a segmented video slice."""
-    slice_id: str # Unique ID for the slice
-    video_id: str # Foreign key to VideoMetadata
-    start_time: float # Start time in seconds
-    end_time: float # End time in seconds
-    transcript: str # Full transcript of the slice
-    topics: List[str] # List of identified topics
-    keywords: List[str] # List of extracted keywords
-    summary: Optional[str] # Optional summary of the slice
-
-class IngestionStatus(BaseModel):
-    """Status of a video ingestion process."""
-    video_id: str
-    status: str # e.g., "PENDING", "AUDIO_EXTRACTED", "TRANSCRIBED", "COMPLETED", "FAILED"
-    progress: float # 0.0 to 1.0
-    message: Optional[str] # Detailed message or error
-```
 
 ### list of tasks to be completed to fullfill the PRP in the order they should be completed
 
@@ -198,9 +158,6 @@ CREATE src/main.py:
   - Define a top-level `ingest` command.
 
 CREATE src/video_ingestion/__init__.py:
-CREATE src/video_ingestion/models.py:
-  - Implement Pydantic models as defined in "Data models and structure".
-
 CREATE src/cli/__init__.py:
 CREATE src/cli/commands.py:
   - Define the `ingest` command function.
@@ -218,32 +175,26 @@ CREATE src/video_ingestion/image_extractor.py:
 
 Task 4: Implement Whisper Transcriber
 CREATE src/video_ingestion/transcriber.py:
-  - Function to send video/audio to Whisper model for transcription.
+  - Function to transcribe audio using Whisper model.
   - Handle model loading and inference.
-  - Implement retry logic for model inference if applicable.
+  - Return transcription with word-level timestamps when possible.
   - Handle potential errors during model execution.
 
-Task 5: Implement Database Module
-CREATE src/video_ingestion/database.py:
-  - Functions to initialize SQLite database (e.g., `video_catalog.db`).
-  - Functions to store and retrieve `VideoMetadata` and `VideoSlice` objects.
-  - Ensure proper indexing for efficient lookups.
-
-Task 6: Implement Keyword Extraction with spaCy
+Task 5: Implement Keyword Extraction with spaCy
 CREATE src/video_ingestion/topic_extractor.py:
   - Function to extract trading/financial keywords from Whisper transcription with word-level timestamps.
   - Use spaCy NLP for enhanced keyword matching including lemmatization.
   - Return dictionary format: `{keyword: [{"start": 1.2, "end": 1.5}, ...]}`.
   - Handle punctuation cleaning and avoid duplicate timestamps.
 
-Task 7: Orchestrate Ingestion Process
+Task 6: Orchestrate Ingestion Process and Report Generation
 MODIFY src/cli/commands.py:
-  - Integrate `audio_extractor`, `image_extractor`, `transcriber`, `topic_extractor`, and `database` modules within the `ingest` command.
+  - Integrate `audio_extractor`, `image_extractor`, `transcriber`, and `topic_extractor` modules within the `ingest` command.
+  - Generate structured markdown reports with transcript, keywords, and screenshot references.
   - Implement progress reporting and error handling.
-  - Update `VideoMetadata` and `VideoSlice` in the database.
   - Ensure outputs are organized into structured directories (`output/reports/`, `output/screenshots/`).
 
-Task 8: Environment Variable Setup
+Task 7: Environment Variable Setup
 CREATE .env.example:
   - Add clear, detailed instructions for `ffmpeg` installation and Whisper model download/setup.
   - Add spaCy model installation instructions: `python -m spacy download en_core_web_sm`.
@@ -360,83 +311,23 @@ def transcribe_audio(audio_path: str) -> str:
     except Exception as e:
         raise RuntimeError(f"Whisper transcription failed: {e}")
 
-# Task 5: Implement Database Module
-# src/video_ingestion/database.py
-import sqlite3
-from typing import List, Dict
-
-def init_db(db_path: str):
-    """Initializes the SQLite database schema."""
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS videos (
-            video_id TEXT PRIMARY KEY,
-            original_path TEXT NOT NULL,
-            file_hash TEXT NOT NULL,
-            ingestion_timestamp TEXT NOT NULL
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS video_slices (
-            slice_id TEXT PRIMARY KEY,
-            video_id TEXT NOT NULL,
-            start_time REAL NOT NULL,
-            end_time REAL NOT NULL,
-            transcript TEXT NOT NULL,
-            topics TEXT, -- Stored as JSON string
-            keywords TEXT, -- Stored as JSON string
-            summary TEXT,
-            FOREIGN KEY (video_id) REFERENCES videos (video_id)
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-def insert_video_metadata(db_path: str, metadata: Dict):
-    """Inserts video metadata into the database."""
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO videos (video_id, original_path, file_hash, ingestion_timestamp)
-        VALUES (?, ?, ?, ?)
-    """, (metadata["video_id"], metadata["original_path"], metadata["file_hash"], metadata["ingestion_timestamp"])))
-    conn.commit()
-    conn.close()
-
-def insert_video_slice(db_path: str, slice_data: Dict):
-    """Inserts a video slice into the database."""
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO video_slices (slice_id, video_id, start_time, end_time, transcript, topics, keywords, summary)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        slice_data["slice_id"], slice_data["video_id"], slice_data["start_time"],
-        slice_data["end_time"], slice_data["transcript"],
-        str(slice_data.get("topics", [])), # Reason: Store list as JSON string
-        str(slice_data.get("keywords", [])), # Reason: Store list as JSON string
-        slice_data.get("summary")
-    )))
-    conn.commit()
-    conn.close()
-
 ```
 
 ### Integration Points
 ```yaml
-DATABASE:
-  - file: database/video_catalog.db
-  - migration: "Initial schema creation for videos and video_slices tables."
-
 CONFIG:
   - add to: .env.example
   - pattern: "# Instructions for ffmpeg installation: https://ffmpeg.org/download.html"
   - pattern: "# Instructions for Whisper setup: Refer to https://github.com/openai/whisper"
+  - pattern: "# Instructions for spaCy model: python -m spacy download en_core_web_sm"
 
-ROUTES:
+CLI:
   - add to: src/main.py (CLI commands)
   - pattern: "parser.add_argument('--video-path', help='Path to the MP4 video file to ingest.')"
+
+OUTPUT:
+  - directories: "output/reports/ and output/screenshots/ for organized file management"
+  - format: "Structured markdown reports with relative paths to screenshots"
 ```
 
 ## Validation Loop
@@ -543,84 +434,8 @@ def test_transcribe_audio_model_load_failure(mock_load_model, tmp_path):
     dummy_audio_path = tmp_path / "dummy_audio.mp3"
     dummy_audio_path.write_bytes(b"dummy audio data")
 
-    with pytest.raises(RuntimeError, match="Video-Llama transcription failed: Model load error"):
+    with pytest.raises(RuntimeError, match="Whisper transcription failed: Model load error"):
         transcribe_audio(str(dummy_audio_path))
-
-# CREATE tests/test_video_ingestion/test_database.py
-import pytest
-import sqlite3
-import os
-from src.video_ingestion.database import init_db, insert_video_metadata, insert_video_slice
-from src.video_ingestion.models import VideoMetadata, VideoSlice
-import json
-
-def test_init_db(tmp_path):
-    """Test database initialization."""
-    db_path = tmp_path / "test_catalog.db"
-    init_db(str(db_path))
-    assert os.path.exists(db_path)
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    tables = cursor.fetchall()
-    conn.close()
-    assert ('videos',) in tables
-    assert ('video_slices',) in tables
-
-def test_insert_video_metadata(tmp_path):
-    """Test inserting video metadata."""
-    db_path = tmp_path / "test_catalog.db"
-    init_db(str(db_path))
-    metadata = VideoMetadata(
-        video_id="vid123",
-        original_path="/path/to/video.mp4",
-        file_hash="abc123xyz",
-        ingestion_timestamp="2025-07-05T10:00:00Z"
-    )
-    insert_video_metadata(str(db_path), metadata.model_dump())
-
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM videos WHERE video_id='vid123'")
-    result = cursor.fetchone()
-    conn.close()
-    assert result is not None
-    assert result[0] == "vid123"
-
-def test_insert_video_slice(tmp_path):
-    """Test inserting a video slice."""
-    db_path = tmp_path / "test_catalog.db"
-    init_db(str(db_path))
-    # First insert parent video metadata
-    metadata = VideoMetadata(
-        video_id="vid456",
-        original_path="/path/to/video2.mp4",
-        file_hash="def456uvw",
-        ingestion_timestamp="2025-07-05T11:00:00Z"
-    )
-    insert_video_metadata(str(db_path), metadata.model_dump())
-
-    video_slice = VideoSlice(
-        slice_id="sliceA",
-        video_id="vid456",
-        start_time=10.5,
-        end_time=30.0,
-        transcript="This is a test transcription.",
-        topics=["market open", "strategy"],
-        keywords=["open", "strategy", "trade"],
-        summary="Summary of market open strategy."
-    )
-    insert_video_slice(str(db_path), video_slice.model_dump())
-
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM video_slices WHERE slice_id='sliceA'")
-    result = cursor.fetchone()
-    conn.close()
-    assert result is not None
-    assert result[0] == "sliceA"
-    assert result[1] == "vid456"
-    assert json.loads(result[5].replace("'", "\"")) == ["market open", "strategy"] # Reason: Convert back from string to list for assertion
 
 ```
 
@@ -635,31 +450,37 @@ uv run pytest tests/test_video_ingestion/ -v
 # Manual test:
 # 1. Ensure ffmpeg is installed and in your system's PATH.
 # 2. IMPORTANT: Install `openai-whisper` and ensure `torch` is installed. The Whisper model will download automatically on first use.
-# 3. Ensure `ffmpeg` is installed and in your system's PATH.
+# 3. Ensure spaCy model is installed: `python -m spacy download en_core_web_sm`
 # 4. Place a small MP4 video file (e.g., 30 seconds) in a known location.
 # 5. Run the ingestion command:
 #    uv run python src/main.py ingest --video-path /path/to/your/video.mp4
 
 # Expected:
-# - Progress messages in the console.
-# - A 'database/video_catalog.db' file is created/updated.
-# - The database contains entries in 'videos' and 'video_slices' tables for the ingested video.
-# - No errors or exceptions are reported.
+# - Progress messages in the console during processing
+# - Structured directories created: output/reports/ and output/screenshots/
+# - Markdown report generated in output/reports/ with transcript and keywords
+# - Screenshots captured every 4 seconds in output/screenshots/
+# - Report contains relative paths to screenshots for portability
+# - No errors or exceptions are reported
 ```
 
 ## Final validation Checklist
 - [ ] All tests pass: `uv run pytest tests/ -v`
 - [ ] No linting errors: `uv run ruff check src/`
 - [ ] No type errors: `uv run mypy src/`
-- [ ] Manual test successful: [specific curl/command]
-- [ ] Error cases handled gracefully
-- [ ] Logs are informative but not verbose
-- [ ] Documentation updated if needed
-- [ ] Whisper model is confirmed to be loadable and performs actual transcription.
+- [ ] Manual test successful: `uv run python src/main.py ingest --video-path /path/to/test_video.mp4`
+- [ ] Error cases handled gracefully (missing ffmpeg, invalid video paths, model loading failures)
+- [ ] Progress messages are informative but not verbose
+- [ ] ffmpeg is confirmed to be installed and working for both audio extraction and screenshot capture
+- [ ] Whisper model is confirmed to be loadable and performs actual transcription
+- [ ] spaCy model downloads and performs keyword extraction correctly
+- [ ] Markdown reports are generated with proper structure and relative screenshot paths
 
 ## Anti-Patterns to Avoid
-- ❌ Don't hardcode model paths or sensitive information.
-- ❌ Don't assume ffmpeg is installed; provide clear instructions and error messages.
-- ❌ Don't process entire large videos in memory; stream or chunk as necessary.
-- ❌ Don't ignore Whisper model resource requirements (e.g., GPU, memory).
-- ❌ Don't store lists/dictionaries directly in SQLite without serialization (e.g., JSON).
+- ❌ Don't hardcode model paths or sensitive information - use environment variables
+- ❌ Don't assume ffmpeg is installed; provide clear instructions and error messages
+- ❌ Don't process entire large videos in memory; use streaming for audio extraction
+- ❌ Don't ignore Whisper model resource requirements (e.g., GPU, memory)
+- ❌ Don't use absolute paths in markdown reports - use relative paths for portability
+- ❌ Don't skip progress reporting for long-running operations like transcription
+- ❌ Don't create screenshots without proper timestamp alignment with transcription
